@@ -54,22 +54,14 @@ st.markdown(
 # ============================================================
 # SafeColorJitter — Custom color jitter with pixel clamping
 # ============================================================
-# Applies brightness/contrast/saturation/hue jitter
-# while keeping pixel values within valid [0,1] range.
-# ============================================================
 class SafeColorJitter(transforms.ColorJitter):
     def __init__(self, brightness=0, contrast=0, saturation=0, hue=0):
         super().__init__(brightness, contrast, saturation, hue)
 
     def __call__(self, img):
-        # Apply standard ColorJitter transformation
         img = super().__call__(img)
-
-        # Convert to tensor to safely clamp pixel values
         img = F.to_tensor(img)
         img = torch.clamp(img, 0, 1)
-
-        # Convert back to PIL image
         img = F.to_pil_image(img)
         return img
 
@@ -77,30 +69,23 @@ class SafeColorJitter(transforms.ColorJitter):
 # ============================================================
 # Paired Transformations for VIA-style Dataset
 # ============================================================
-# Uses augmentations (flip, rotation, SafeColorJitter, crop)
-# and applies them identically to both before/after images.
-# ============================================================
-
-# --- Spatial transforms (same for both before & after) ---
 spatial_transform_train = transforms.Compose([
     transforms.RandomHorizontalFlip(),                     # horizontal flip
     transforms.RandomRotation(15),                         # rotate ±15 degrees
     transforms.RandomResizedCrop(224, scale=(0.8, 1.0)),   # crop & resize
 ])
 
-# --- Validation transforms (no augmentation) ---
 spatial_transform_val = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(224),
 ])
 
-# --- Normalization (same as your original code) ---
 normalize_transform = transforms.Normalize(
     mean=[0.5, 0.5, 0.5],
     std=[0.5, 0.5, 0.5],
 )
 
-# --- Paired Transform Wrapper ---
+
 class PairedTransform:
     """
     Applies identical geometric transforms (flip, rotation, crop)
@@ -113,18 +98,15 @@ class PairedTransform:
         self.normalize = normalize
 
     def __call__(self, before_img, after_img):
-        # Synchronize spatial transforms via fixed seed
         seed = int(torch.empty((), dtype=torch.int64).random_().item())
         torch.manual_seed(seed)
         before_img = self.spatial_transform(before_img)
         torch.manual_seed(seed)
         after_img = self.spatial_transform(after_img)
 
-        # Apply independent color jitter for before/after
         before_img = self.color_jitter(before_img)
         after_img  = self.color_jitter(after_img)
 
-        # Convert to tensors and normalize
         to_tensor = transforms.ToTensor()
         before_t, after_t = to_tensor(before_img), to_tensor(after_img)
         if self.normalize:
@@ -134,7 +116,6 @@ class PairedTransform:
         return before_t, after_t
 
 
-# --- Instantiate final paired transforms ---
 train_transform = PairedTransform(
     spatial_transform_train,
     SafeColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
@@ -201,7 +182,6 @@ u_col1, u_col2 = st.columns(2)
 before_file = u_col1.file_uploader("Upload BEFORE image", type=["jpg", "jpeg", "png"])
 after_file  = u_col2.file_uploader("Upload AFTER image",  type=["jpg", "jpeg", "png"])
 
-# Single-image mode logic
 single_mode = False
 if before_file and not after_file:
     after_file = before_file
@@ -281,7 +261,7 @@ if run_prediction and before_file and after_file:
     vt_col2.image(denorm(a_det), caption="After (val-transformed)", width=320)
 
     # ========================================================
-    # 4) AUGMENTATIONS (EXPANDER) + PIPELINE DESCRIPTION
+    # 4) AUGMENTATIONS (EXPANDER) + PER-IMAGE AUGMENTATION NAMES
     # ========================================================
     with st.expander("Show training-time augmentations", expanded=False):
         st.markdown(
@@ -293,16 +273,25 @@ if run_prediction and before_file and after_file:
             "- Convert to tensor + normalize with mean=0.5, std=0.5 per channel"
         )
         st.markdown("---")
+
+        aug_caption = (
+            "Random horizontal flip\n"
+            "Random rotation (±15°)\n"
+            "Random resized crop to 224×224 (scale 0.8–1.0)\n"
+            "SafeColorJitter (brightness/contrast/saturation jitter with pixel clamping)\n"
+            "Convert to tensor + normalize (mean 0.5, std 0.5 per channel)"
+        )
+
         for i in range(3):
             b_aug, a_aug = train_transform(before_pil, after_pil)
             aug_c1, aug_c2 = st.columns(2)
             aug_c1.image(
                 denorm(b_aug),
-                caption=f"Before (augmentation {i+1})",
+                caption=f"Before – Augmentation {i+1}\n{aug_caption}",
                 width=320,
             )
             aug_c2.image(
                 denorm(a_aug),
-                caption=f"After (augmentation {i+1})",
+                caption=f"After – Augmentation {i+1}\n{aug_caption}",
                 width=320,
             )
