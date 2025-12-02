@@ -261,37 +261,58 @@ if run_prediction and before_file and after_file:
     vt_col2.image(denorm(a_det), caption="After (val-transformed)", width=320)
 
     # ========================================================
-    # 4) AUGMENTATIONS (EXPANDER) + PER-IMAGE AUGMENTATION NAMES
+    # 4) AUGMENTATIONS (EACH BLOCK = SINGLE TRANSFORM)
     # ========================================================
-    with st.expander("Show training-time augmentations", expanded=False):
+    with st.expander("Show individual augmentations", expanded=False):
         st.markdown(
-            "**Augmentation pipeline applied for each sample:**  \n"
-            "- Random horizontal flip  \n"
-            "- Random rotation (±15°)  \n"
-            "- Random resized crop to 224×224 (scale 0.8–1.0)  \n"
-            "- SafeColorJitter (brightness/contrast/saturation jitter with pixel clamping)  \n"
-            "- Convert to tensor + normalize with mean=0.5, std=0.5 per channel"
+            "Each block below shows a **single augmentation type** applied "
+            "to the BEFORE and AFTER images."
         )
         st.markdown("---")
 
-        aug_caption = (
-            "Random horizontal flip\n"
-            "Random rotation (±15°)\n"
-            "Random resized crop to 224×224 (scale 0.8–1.0)\n"
-            "SafeColorJitter (brightness/contrast/saturation jitter with pixel clamping)\n"
-            "Convert to tensor + normalize (mean 0.5, std 0.5 per channel)"
-        )
+        # 4.1 SafeColorJitter only
+        st.markdown("### Augmentation 1 – SafeColorJitter")
+        cj = SafeColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)
+        b_cj = cj(before_pil.copy())
+        a_cj = cj(after_pil.copy())
+        col1, col2 = st.columns(2)
+        col1.image(b_cj, caption="Before (SafeColorJitter)", width=320)
+        col2.image(a_cj, caption="After (SafeColorJitter)", width=320)
+        st.markdown("---")
 
-        for i in range(3):
-            b_aug, a_aug = train_transform(before_pil, after_pil)
-            aug_c1, aug_c2 = st.columns(2)
-            aug_c1.image(
-                denorm(b_aug),
-                caption=f"Before – Augmentation {i+1}\n{aug_caption}",
-                width=320,
-            )
-            aug_c2.image(
-                denorm(a_aug),
-                caption=f"After – Augmentation {i+1}\n{aug_caption}",
-                width=320,
-            )
+        # 4.2 RandomRotation only (±15°), same angle for both
+        st.markdown("### Augmentation 2 – RandomRotation(±15°)")
+        angle = float(torch.empty(1).uniform_(-15, 15).item())
+        b_rot = F.rotate(before_pil.copy(), angle)
+        a_rot = F.rotate(after_pil.copy(), angle)
+        col1, col2 = st.columns(2)
+        col1.image(b_rot, caption=f"Before (RandomRotation {angle:.1f}°)", width=320)
+        col2.image(a_rot, caption=f"After (RandomRotation {angle:.1f}°)", width=320)
+        st.markdown("---")
+
+        # 4.3 RandomHorizontalFlip only, same decision for both
+        st.markdown("### Augmentation 3 – RandomHorizontalFlip")
+        do_flip = bool(torch.rand(1).item() > 0.5)
+        if do_flip:
+            b_flip = F.hflip(before_pil.copy())
+            a_flip = F.hflip(after_pil.copy())
+            flip_label = "applied"
+        else:
+            b_flip = before_pil.copy()
+            a_flip = after_pil.copy()
+            flip_label = "not applied"
+        col1, col2 = st.columns(2)
+        col1.image(b_flip, caption=f"Before (RandomHorizontalFlip {flip_label})", width=320)
+        col2.image(a_flip, caption=f"After (RandomHorizontalFlip {flip_label})", width=320)
+        st.markdown("---")
+
+        # 4.4 RandomResizedCrop only (224, scale=(0.8, 1.0)), same params for both
+        st.markdown("### Augmentation 4 – RandomResizedCrop(224, scale=(0.8, 1.0))")
+        rrc = transforms.RandomResizedCrop(224, scale=(0.8, 1.0))
+        # Get params once, apply to both via functional API
+        i, j, h, w = transforms.RandomResizedCrop.get_params(before_pil, scale=(0.8, 1.0), ratio=(1.0, 1.0))
+        b_rrc = F.resized_crop(before_pil.copy(), i, j, h, w, (224, 224))
+        a_rrc = F.resized_crop(after_pil.copy(), i, j, h, w, (224, 224))
+        col1, col2 = st.columns(2)
+        col1.image(b_rrc, caption="Before (RandomResizedCrop 224, scale=(0.8,1.0))", width=320)
+        col2.image(a_rrc, caption="After (RandomResizedCrop 224, scale=(0.8,1.0))", width=320)
