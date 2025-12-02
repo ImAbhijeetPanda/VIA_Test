@@ -21,23 +21,41 @@ st.set_page_config(
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Small CSS touch for prediction badge
+# ------------------- basic styling tweaks --------------------
 st.markdown(
     """
     <style>
+    .main-block {
+        max-width: 1100px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+    .section-card {
+        background-color: #111827;
+        padding: 1.2rem 1.4rem;
+        border-radius: 0.8rem;
+        border: 1px solid #1f2933;
+        margin-bottom: 1.2rem;
+    }
     .pred-badge-positive {
         background-color:#16a34a;
         color:white;
-        padding:0.2rem 0.6rem;
+        padding:0.25rem 0.7rem;
         border-radius:0.5rem;
         font-weight:600;
+        font-size:0.95rem;
     }
     .pred-badge-negative {
         background-color:#dc2626;
         color:white;
-        padding:0.2rem 0.6rem;
+        padding:0.25rem 0.7rem;
         border-radius:0.5rem;
         font-weight:600;
+        font-size:0.95rem;
+    }
+    .small-caption {
+        font-size:0.8rem;
+        color:#9ca3af;
     }
     </style>
     """,
@@ -136,12 +154,11 @@ model = load_model()
 with st.sidebar:
     st.markdown("### About this demo")
     st.write(
-        "Research prototype for **cervical cancer image classification** "
-        "based on paired colposcopy images (before / after application)."
+        "Research prototype for cervical cancer image classification using "
+        "paired colposcopy images (before / after)."
     )
     st.caption(
-        "This tool is for **research and demonstration only** and is "
-        "not a medical diagnostic device."
+        "For **research and demonstration only** – not for clinical use."
     )
     st.caption(f"Running on: `{device}`")
 
@@ -149,105 +166,101 @@ with st.sidebar:
 # ============================================================
 # MAIN LAYOUT
 # ============================================================
-st.title("Cervical Cancer Image Classifier")
+with st.container():
+    st.markdown('<div class="main-block">', unsafe_allow_html=True)
 
-st.markdown(
-    "Upload **before** and **after** cervix images. "
-    "If you only upload one image, it will be used as **both** inputs."
-)
+    st.title("Cervical Cancer Image Classifier")
 
-u_col1, u_col2 = st.columns(2)
-before_file = u_col1.file_uploader("Upload BEFORE image", type=["jpg", "jpeg", "png"])
-after_file  = u_col2.file_uploader("Upload AFTER image",  type=["jpg", "jpeg", "png"])
+    st.markdown(
+        "Upload **before** and **after** cervix images. "
+        "If you only upload one image, it will be used as **both** inputs."
+    )
 
-# Single-image mode logic
-single_mode = False
-if before_file and not after_file:
-    after_file = before_file
-    single_mode = True
-elif after_file and not before_file:
-    before_file = after_file
-    single_mode = True
+    # ------------------- upload section -------------------
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
+    u_col1, u_col2 = st.columns(2)
+    before_file = u_col1.file_uploader("Upload BEFORE image", type=["jpg", "jpeg", "png"], key="before")
+    after_file  = u_col2.file_uploader("Upload AFTER image",  type=["jpg", "jpeg", "png"], key="after")
 
-run_prediction = False
-if before_file and after_file:
-    # Show predict button only when we have at least one image
-    run_prediction = st.button("🔍 Run Prediction", type="primary")
-else:
-    st.info("Upload one or two images to enable prediction.")
+    single_mode = False
+    if before_file and not after_file:
+        after_file = before_file
+        single_mode = True
+    elif after_file and not before_file:
+        before_file = after_file
+        single_mode = True
 
-if run_prediction and before_file and after_file:
-    before_pil = Image.open(before_file).convert("RGB")
-    after_pil  = Image.open(after_file).convert("RGB")
+    run_prediction = False
+    if before_file and after_file:
+        run_prediction = st.button("🔍 Run Prediction", type="primary")
+    else:
+        st.caption("Upload one or two images to enable prediction.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # ========================================================
-    # 1) PREDICTION (FIRST)
-    # ========================================================
-    b_det, a_det = val_transform(before_pil, after_pil)
+    if run_prediction and before_file and after_file:
+        before_pil = Image.open(before_file).convert("RGB")
+        after_pil  = Image.open(after_file).convert("RGB")
 
-    with torch.no_grad():
-        inp = torch.cat([b_det, a_det], dim=0).unsqueeze(0).to(device)
-        logits = model(inp)
-        probs = softmax(logits).cpu().numpy()[0]
-        pred = int(np.argmax(probs))
+        # deterministic model input
+        b_det, a_det = val_transform(before_pil, after_pil)
+        with torch.no_grad():
+            inp = torch.cat([b_det, a_det], dim=0).unsqueeze(0).to(device)
+            logits = model(inp)
+            probs = softmax(logits).cpu().numpy()[0]
+            pred = int(np.argmax(probs))
 
-    label = "Positive" if pred == 1 else "Negative"
-    badge_class = "pred-badge-positive" if pred == 1 else "pred-badge-negative"
+        label = "Positive" if pred == 1 else "Negative"
+        badge_class = "pred-badge-positive" if pred == 1 else "pred-badge-negative"
 
-    st.markdown("---")
-    st.subheader("Prediction")
+        # ------------------- prediction section -------------------
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.subheader("Prediction")
 
-    p_col1, p_col2 = st.columns([2, 3])
+        p_top = st.columns([2, 1, 1])
 
-    with p_col1:
-        st.markdown(
-            f"#### Predicted Class: "
-            f"<span class='{badge_class}'>{label}</span>",
-            unsafe_allow_html=True,
-        )
-        st.write(f"**Negative Probability:** {probs[0]:.4f}")
-        st.write(f"**Positive Probability:** {probs[1]:.4f}")
-        if single_mode:
-            st.info("Single-image mode: the same image was used as BEFORE and AFTER.")
-
-    with p_col2:
-        st.markdown("**Class Probabilities**")
-        st.bar_chart({"Negative": [probs[0]], "Positive": [probs[1]]})
-
-    # ========================================================
-    # 2) UPLOADED IMAGES (SMALLER THUMBNAILS)
-    # ========================================================
-    st.markdown("---")
-    st.subheader("Uploaded Images")
-
-    img_col1, img_col2 = st.columns(2)
-    img_col1.image(before_pil, caption="BEFORE", width=320)
-    img_col2.image(after_pil, caption="AFTER", width=320)
-
-    # ========================================================
-    # 3) MODEL INPUT (VAL TRANSFORM)
-    # ========================================================
-    st.markdown("---")
-    st.subheader("Model Input (val_transform)")
-
-    vt_col1, vt_col2 = st.columns(2)
-    vt_col1.image(denorm(b_det), caption="Before (val-transformed)", width=320)
-    vt_col2.image(denorm(a_det), caption="After (val-transformed)", width=320)
-
-    # ========================================================
-    # 4) AUGMENTATIONS (EXPANDER)
-    # ========================================================
-    with st.expander("Show training-time augmentations", expanded=False):
-        for i in range(3):
-            b_aug, a_aug = train_transform(before_pil, after_pil)
-            aug_c1, aug_c2 = st.columns(2)
-            aug_c1.image(
-                denorm(b_aug),
-                caption=f"Before (augmentation {i+1})",
-                width=320,
+        with p_top[0]:
+            st.markdown(
+                f"**Predicted Class:** "
+                f"<span class='{badge_class}'>{label}</span>",
+                unsafe_allow_html=True,
             )
-            aug_c2.image(
-                denorm(a_aug),
-                caption=f"After (augmentation {i+1})",
-                width=320,
-            )
+            if single_mode:
+                st.markdown(
+                    "<span class='small-caption'>Single-image mode: the same image was used as BEFORE and AFTER.</span>",
+                    unsafe_allow_html=True,
+                )
+
+        with p_top[1]:
+            st.metric("Negative score", f"{probs[0]:.3f}")
+        with p_top[2]:
+            st.metric("Positive score", f"{probs[1]:.3f}")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ------------------- uploaded images -------------------
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.subheader("Uploaded Images")
+        img_col1, img_col2 = st.columns(2)
+        img_col1.image(before_pil, caption="BEFORE", width=320)
+        img_col2.image(after_pil, caption="AFTER", width=320)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ------------------- model input -------------------
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        st.subheader("Model Input (val_transform)")
+        vt_col1, vt_col2 = st.columns(2)
+        vt_col1.image(denorm(b_det), caption="Before (val-transformed)", width=320)
+        vt_col2.image(denorm(a_det), caption="After (val-transformed)", width=320)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ------------------- augmentations -------------------
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
+        with st.expander("Show training-time augmentations", expanded=False):
+            for i in range(3):
+                b_aug, a_aug = train_transform(before_pil, after_pil)
+                aug_c1, aug_c2 = st.columns(2)
+                aug_c1.image(denorm(b_aug), caption=f"Before (augmentation {i+1})", width=320)
+                aug_c2.image(denorm(a_aug), caption=f"After (augmentation {i+1})", width=320)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
